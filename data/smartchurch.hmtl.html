@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Smart Church</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+body { font-family: Arial; text-align:center; background:#f4f4f4; }
+.card { background:white; padding:15px; margin:10px; border-radius:10px; }
+canvas { max-width:600px; margin:auto; }
+</style>
+</head>
+
+<body>
+
+<h2>⛪ Smart Church Dashboard JACSON</h2>
+
+<div class="card">🌡 Température: <span id="temp">--</span></div>
+<div class="card">💧 Humidité: <span id="hum">--</span></div>
+<div class="card">🚶 Mouvement: <span id="motion">--</span></div>
+<div class="card">💡 Lumière: <span id="light">--</span></div>
+
+<canvas id="tempChart"></canvas>
+<canvas id="humChart"></canvas>
+
+<script>
+let labels = [];
+let tempData = [];
+let humData = [];
+
+const tempChart = new Chart(document.getElementById("tempChart"), {
+  type: "line",
+  data: { labels: labels, datasets: [{ label: "Température", data: tempData }] }
+});
+
+const humChart = new Chart(document.getElementById("humChart"), {
+  type: "line",
+  data: { labels: labels, datasets: [{ label: "Humidité", data: humData }] }
+});
+
+function getData(url, callback){
+  let xhr = new XMLHttpRequest();
+  xhr.open("GET", url, true);
+  xhr.onreadystatechange = function(){
+    if(xhr.readyState==4 && xhr.status==200){
+      callback(JSON.parse(xhr.responseText));
+    }
+  };
+  xhr.send();
+}
+
+function evalTemp(t){ return t>30?"🔥 Chaud":t<18?"❄️ Froid":"✅ OK"; }
+function evalHum(h){ return h>70?"💧 Elevée":h<30?"🌵 Faible":"✅ OK"; }
+function evalMotion(m){ return m?"🚶 Détecté":"⛔ Aucun"; }
+function evalLight(l){ return l<200?"🌙 Faible":"💡 Bonne"; }
+
+function update(){
+
+  getData("/temperature", d=>{
+    document.getElementById("temp").innerHTML =
+      d.value+" °C - "+evalTemp(d.value);
+    tempData.push(d.value);
+  });
+
+  getData("/humidity", d=>{
+    document.getElementById("hum").innerHTML =
+      d.value+" % - "+evalHum(d.value);
+    humData.push(d.value);
+  });
+
+  getData("/motion", d=>{
+    document.getElementById("motion").innerHTML =
+      evalMotion(d.value);
+  });
+
+  getData("/light", d=>{
+    document.getElementById("light").innerHTML =
+      d.value+" lx - "+evalLight(d.value);
+  });
+
+  let time = new Date().toLocaleTimeString();
+  labels.push(time);
+
+  if(labels.length>10){
+    labels.shift(); tempData.shift(); humData.shift();
+  }
+
+  tempChart.update();
+  humChart.update();
+}
+
+setInterval(update,2000);
+update();
+</script>
+
+</body>
+</html>
