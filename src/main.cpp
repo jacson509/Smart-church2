@@ -13,7 +13,7 @@ const char* password = "your password";
 WebServer server(80);
 
 // ADAFRUIT IO
-#define IO_USERNAME  "jacson509"
+#define IO_USERNAME  "triplej509"
 #define IO_KEY "YOUR_IO_KEY"
 
 
