@@ -1,168 +1,122 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <WebServer.h>
-#include <ArduinoOTA.h>
-#include "SPIFFS.h"
-#include <WiFiClientSecure.h>
 #include <HTTPClient.h>
+#include <WiFiClientSecure.h>
+#include "SPIFFS.h"
+#include <ArduinoJson.h>
 
-// WIFI.
+// WIFI
 const char* ssid = "Triplej509";
-const char* password = "your password";
+const char* password = "12345678";
 
+// SERVER.
 WebServer server(80);
-// jacson
-// ADAFRUIT IO
-#define IO_USERNAME  "triplej509"
-#define IO_KEY "YOUR_IO_clef"
 
+// VARIABLES (propres)
+float temperature = 0;
+int humidity = 0;
+bool motion = false;
+int light = 0;
 
-// ================= GET DATA =================
-String getAdafruitData(String feed){
+// API MOCKAROO
+String api_url = "https://my.api.mockaroo.com/jacson.json?key=5883b5e0";
 
+// ===================== API =====================
+void updateData() {
   WiFiClientSecure client;
   client.setInsecure();
 
   HTTPClient http;
-
-  String url = "https://io.adafruit.com/api/v2/" + String(IO_USERNAME) + "/feeds/" + feed + "/data/last";
-
-  http.begin(client, url);
-  http.addHeader("X-AIO-Key", IO_KEY);
+  http.begin(client, api_url);
 
   int httpCode = http.GET();
 
-  Serial.print("HTTP CODE: ");
-  Serial.println(httpCode);
+  if (httpCode > 0) {
+    String payload = http.getString();
 
-  String payload = "{}";
-
-  if(httpCode == 200){
-    payload = http.getString();
-
-    Serial.println("==== DATA RECEIVED ====");
+    Serial.println("----- API RESPONSE -----");
     Serial.println(payload);
+    Serial.println("------------------------");
+
+    DynamicJsonDocument doc(1024);
+    DeserializationError error = deserializeJson(doc, payload);
+
+  if (!error) {
+
+  JsonObject obj = doc.is<JsonArray>() ? doc[0] : doc.as<JsonObject>();
+
+  temperature = obj["temperature"] | obj["Temperature"] | 0;
+  humidity    = obj["humidity"]    | obj["Humidity"]    | 0;
+  motion      = obj["motion"]      | obj["Motion"]      | false;
+  light       = obj["light"]       | obj["Light"]       | 0;
+
+  Serial.println(" DATA OK");
+    } else {
+      Serial.println("Erreur JSON");
+    }
   } else {
-    Serial.println("Erreur Adafruit IO");
+    Serial.println("Erreur HTTP");
   }
 
   http.end();
-
-  return payload;
 }
 
-// ================= PARSE =================
-String extractValue(String data){
+// ===================== API LOCAL =====================
+void handleData() {
+  String json = "{";
+  json += "\"temperature\":" + String(temperature) + ",";
+  json += "\"humidity\":" + String(humidity) + ",";
+  json += "\"motion\":" + String(motion ? "true" : "false") + ",";
+  json += "\"light\":" + String(light);
+  json += "}";
 
-  int start = data.indexOf("\"value\":\"") + 9;
-  int end = data.indexOf("\"", start);
-
-  String value = data.substring(start, end);
-
-  value.trim();
-
-  if(value == "" || value == "null"){
-    value = "0";
-  }
-
-  return value;
+  server.send(200, "application/json", json);
 }
 
-// ================= ROUTES =================
-void handleRoot(){
-
-  if(!SPIFFS.exists("/index.html")){
-    server.send(404, "text/plain", "Fichier HTML non trouvé");
+// ===================== PAGE WEB =====================
+void handleRoot() {
+  File file = SPIFFS.open("/index.html", "r");
+  if (!file) {
+    server.send(500, "text/plain", "Erreur fichier HTML");
     return;
   }
-
-  File file = SPIFFS.open("/index.html", "r");
   server.streamFile(file, "text/html");
   file.close();
 }
 
-// 🌡️
-void handleTemperature(){
-
-  String data = getAdafruitData("temperature");
-  String value = extractValue(data);
-
-  server.send(200, "application/json",
-    "{\"value\":" + value + "}");
-}
-
-// 💧
-void handleHumidity(){
-
-  String data = getAdafruitData("humidity");
-  String value = extractValue(data);
-
-  server.send(200, "application/json",
-    "{\"value\":" + value + "}");
-}
-
-// 🚶
-void handleMotion(){
-
-  String data = getAdafruitData("motion");
-  String value = extractValue(data);
-
-  server.send(200, "application/json",
-    "{\"value\":" + value + "}");
-}
-
-// 💡
-void handleLight(){
-
-  String data = getAdafruitData("light");
-  String value = extractValue(data);
-
-  server.send(200, "application/json",
-    "{\"value\":" + value + "}");
-}
-
-// ================= SETUP =================
-void setup(){
-
+// ===================== SETUP =====================
+void setup() {
   Serial.begin(115200);
 
-  // SPIFFS
-  if(!SPIFFS.begin(true)){
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(1000);
+    Serial.println("Connexion WiFi...");
+  }
+
+  Serial.println("Connecté !");
+  Serial.println(WiFi.localIP());
+
+  if (!SPIFFS.begin(true)) {
     Serial.println("Erreur SPIFFS");
     return;
   }
 
-  // WIFI
-  WiFi.begin(ssid,password);
-  Serial.print("Connexion...");
-
-  while(WiFi.status()!=WL_CONNECTED){
-    delay(500);
-    Serial.print(".");
-  }
-
-  Serial.println("\nConnecté !");
-  Serial.print("IP: ");
-  Serial.println(WiFi.localIP());
-
-  // ROUTES
   server.on("/", handleRoot);
-  server.on("/temperature", handleTemperature);
-  server.on("/humidity", handleHumidity);
-  server.on("/motion", handleMotion);
-  server.on("/light", handleLight);
+  server.on("/data", handleData);
 
   server.begin();
-
-  // OTA
-  ArduinoOTA.setHostname("SmartChurchESP32");
-  ArduinoOTA.begin();
-
-  Serial.println("OTA prêt !");
 }
 
-// ================= LOOP =================
-void loop(){
+// ===================== LOOP =====================
+void loop() {
   server.handleClient();
-  ArduinoOTA.handle();
+
+  static unsigned long lastUpdate = 0;
+
+  if (millis() - lastUpdate > 7000) {
+    updateData();
+    lastUpdate = millis();
+  }
 }
