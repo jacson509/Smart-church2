@@ -6,7 +6,7 @@
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 
-// WIFI
+// WIFI.
 const char* ssid = "Triplej509";
 const char* password = "your password";
 
